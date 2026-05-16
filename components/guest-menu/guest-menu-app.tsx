@@ -6,6 +6,7 @@ import {
   GUEST_MENU_ITEMS,
   type GuestMenuItem,
 } from "@/lib/guest-menu-data";
+import { appendGuestOrder, type GuestOrderPayload } from "@/lib/qr-guest-orders";
 import { ChevronDown, Minus, Plus, Search, ShoppingBag, X } from "lucide-react";
 import Image from "next/image";
 import { useSearchParams } from "next/navigation";
@@ -85,7 +86,7 @@ export function GuestMenuApp() {
     setSheetOpen(false);
     setCart({});
     try {
-      const payload = {
+      const payload: GuestOrderPayload = {
         ref,
         table: table || null,
         items: cartLines.map(({ item, qty }) => ({
@@ -97,13 +98,7 @@ export function GuestMenuApp() {
         total: subtotal,
         at: new Date().toISOString(),
       };
-      const raw = sessionStorage.getItem("ventra_guest_orders_queue");
-      const queue = raw ? (JSON.parse(raw) as unknown[]) : [];
-      queue.push(payload);
-      sessionStorage.setItem(
-        "ventra_guest_orders_queue",
-        JSON.stringify(queue.slice(-20)),
-      );
+      appendGuestOrder(payload);
     } catch {
       /* ignore */
     }

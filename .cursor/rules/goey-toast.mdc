@@ -1,0 +1,71 @@
+---
+description: Toast notifications — always use goey-toast (GooeyToaster + gooeyToast)
+globs: "**/*.{tsx,ts,jsx,js}"
+alwaysApply: false
+---
+
+# Toasts: `goey-toast`
+
+**Always use [goey-toast](https://www.npmjs.com/package/goey-toast)** for toast notifications in this project (morphing / “gooey” toasts). Do **not** add alternate toast libraries unless explicitly requested.
+
+- **Package:** `npm install goey-toast`
+- **Peers:** `react`, `react-dom`, `framer-motion` (ensure installed)
+
+## Setup
+
+1. **Import styles once** (required — toasts use Sonner `unstyled`; blob UI lives in CSS):
+
+   ```css
+   /* e.g. app/globals.css */
+   @import "goey-toast/styles.css";
+   ```
+
+   Without this, toasts look broken / unstyled. DevTools will warn: `[gooey-toast] Styles not found`.
+
+2. Render **`GooeyToaster`** once near the app root (e.g. inside a client `Providers` in `layout.tsx`), with desired **`position`**, **`theme`**, **`preset`**, **`offset`**, etc.
+
+3. Call **`gooeyToast`** from **`goey-toast`** only in **client** code.
+
+```tsx
+import { GooeyToaster, gooeyToast } from "goey-toast";
+
+// root: <GooeyToaster position="bottom-right" theme="light" preset="smooth" />
+// client: gooeyToast.success("Saved!");
+```
+
+Optional shadcn-style wrapper: `npx shadcn@latest add https://goey-toast.vercel.app/r/goey-toaster.json` then import from `@/components/ui/goey-toaster`.
+
+## API surface to prefer
+
+Use the **right variant** for context:
+
+| Situation | Call |
+|-----------|------|
+| Neutral | `gooeyToast("…")` |
+| OK / confirm | `gooeyToast.success("…", { description?: … })` |
+| Failure | `gooeyToast.error("…", { description?: … })` |
+| Caution | `gooeyToast.warning("…", { description?: … })` |
+| Informational | `gooeyToast.info("…", { description?: … })` |
+| Async flow | `gooeyToast.promise(promise, { loading, success, error, description?: { success, error }, action?: … })` |
+
+**Descriptions:** string or `ReactNode` for richer bodies.
+
+**Actions:** `{ label, onClick, successLabel? }` for morph-back pill after click.
+
+**Timing:** per-toast `duration` (ms); global default on `<GooeyToaster duration={…} />`.
+
+**Styling:** `fillColor`, `borderColor`, `borderWidth`, `classNames: { wrapper, content, header, title, icon, description, actionWrapper, actionButton }`.
+
+**Motion:** per-toast or global `spring`, `bounce`, `preset` (`smooth` | `bouncy` | `subtle` | `snappy`).
+
+**Programmatic:** `gooeyToast.dismiss(id?)`, `gooeyToast.dismiss({ type: "error" })`, `gooeyToast.update(id, { title, description, type, action })`.
+
+**Lifecycle:** `onDismiss`, `onAutoClose` when needed.
+
+## Conventions for this codebase
+
+- Prefer **`gooeyToast.success` / `error` / `warning` / `info`** for POS flows (payment, cart, QR orders, kitchen handoff).
+- Use **`gooeyToast.promise`** for saves, uploads, or API calls that resolve/reject.
+- Use **descriptions** for user-facing detail; keep titles short.
+- Match **`theme`** to the surrounding UI (`light` / `dark`) when mounting `GooeyToaster`.
+- **Client-only:** only call `gooeyToast` from client components or effects (not during RSC render).

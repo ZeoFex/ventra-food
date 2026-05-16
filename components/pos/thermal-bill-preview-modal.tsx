@@ -9,12 +9,11 @@ export type ThermalReceiptLine = {
   name: string;
   qty: number;
   unitPrice: number;
+  notes?: string;
 };
 
 export type ThermalReceiptSummary = {
-  productDiscount: number;
-  extraDiscount: number;
-  couponDiscount: number;
+  discount: number;
   total: number;
 };
 
@@ -108,17 +107,8 @@ export function ThermalBillPreviewModal({
     [lines],
   );
   const discountTotal = useMemo(
-    () =>
-      roundMoney(
-        summary.productDiscount +
-          summary.extraDiscount +
-          summary.couponDiscount,
-      ),
-    [
-      summary.productDiscount,
-      summary.extraDiscount,
-      summary.couponDiscount,
-    ],
+    () => roundMoney(summary.discount),
+    [summary.discount],
   );
   const afterDiscounts = roundMoney(itemsGross - discountTotal);
   const adjustment = roundMoney(summary.total - afterDiscounts);
@@ -245,16 +235,25 @@ export function ThermalBillPreviewModal({
 
             <div className="space-y-1.5 text-[10px] leading-tight">
               {lines.map((line, i) => (
-                <div key={`${line.name}-${i}`} className="flex gap-1">
-                  <span className="w-[2rem] shrink-0 text-right tabular-nums">
-                    {line.qty}
-                  </span>
-                  <span className="min-w-0 flex-1 break-words">
-                    {line.name}
-                  </span>
-                  <span className="w-[4.5rem] shrink-0 text-right tabular-nums">
-                    {formatLineTotal(line.unitPrice, line.qty)}
-                  </span>
+                <div key={`${line.name}-${i}`} className="space-y-0.5">
+                  <div className="flex gap-1">
+                    <span className="w-[2rem] shrink-0 text-right tabular-nums">
+                      {line.qty}
+                    </span>
+                    <span className="min-w-0 flex-1 break-words">
+                      {line.name}
+                    </span>
+                    <span className="w-[4.5rem] shrink-0 text-right tabular-nums">
+                      {formatLineTotal(line.unitPrice, line.qty)}
+                    </span>
+                  </div>
+                  {line.notes?.trim() ? (
+                    <div className="flex gap-1 pl-[2rem]">
+                      <span className="text-[9px] italic leading-snug text-black/55">
+                        Note: {line.notes.trim()}
+                      </span>
+                    </div>
+                  ) : null}
                 </div>
               ))}
             </div>
@@ -267,21 +266,9 @@ export function ThermalBillPreviewModal({
                 <span className="tabular-nums">{formatCedi(itemsGross)}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-black/55">Product disc.</span>
+                <span className="text-black/55">Discount</span>
                 <span className="tabular-nums">
-                  −{formatCedi(summary.productDiscount)}
-                </span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-black/55">Extra disc.</span>
-                <span className="tabular-nums">
-                  −{formatCedi(summary.extraDiscount)}
-                </span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-black/55">Coupon</span>
-                <span className="tabular-nums">
-                  −{formatCedi(summary.couponDiscount)}
+                  −{formatCedi(summary.discount)}
                 </span>
               </div>
               {showAdjustment && (

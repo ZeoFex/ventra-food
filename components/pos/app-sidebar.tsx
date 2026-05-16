@@ -2,6 +2,7 @@
 
 import {
   ArrowRight,
+  BookOpen,
   CalendarDays,
   ChefHat,
   CreditCard,
@@ -150,6 +151,7 @@ export function AppSidebar() {
         <NavItem icon={CreditCard} label="Payments" badge="New" href="/payments" />
         <NavItem icon={Users} label="Customer" href="/customers" />
         <NavItem icon={FileText} label="Invoice" href="/invoices" />
+        <NavItem icon={BookOpen} label="Menu" href="/menus" />
         <NavItem icon={QrCode} label="QR menu" href="/menu/qr" />
 
         <NavSectionTitle>Kitchen (KLD)</NavSectionTitle>

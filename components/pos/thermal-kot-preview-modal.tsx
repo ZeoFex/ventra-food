@@ -1,5 +1,9 @@
 "use client";
 
+import {
+  appendKitchenTicket,
+  formatKitchenTime,
+} from "@/lib/kitchen-board-queue";
 import { Printer, X } from "lucide-react";
 import { useCallback, useEffect, useId, useState } from "react";
 import { createPortal } from "react-dom";
@@ -66,6 +70,28 @@ export function ThermalKotPreviewModal({
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [open, onClose]);
+
+  useEffect(() => {
+    if (!open || lines.length === 0) return;
+    const linesKey = lines
+      .map((l) => `${l.name}:${l.qty}:${l.notes?.trim() ?? ""}`)
+      .join("|");
+    const dedupeKey = `pos-kot-${orderNumber}-${tableLabel}-${serviceType}-${linesKey}`;
+    appendKitchenTicket(
+      {
+        id: `KOT-POS-${orderNumber}-${Date.now().toString(36).toUpperCase()}`,
+        table: tableLabel,
+        time: formatKitchenTime(new Date()),
+        items: lines.map((l) => `${l.qty}× ${l.name}`),
+        station: "POS · KOT & Print",
+        status: "new",
+        source: "pos",
+        createdAt: new Date().toISOString(),
+        dedupeKey,
+      },
+      { dedupeKey },
+    );
+  }, [open, orderNumber, tableLabel, serviceType, lines]);
 
   if (!mounted || !open) return null;
 

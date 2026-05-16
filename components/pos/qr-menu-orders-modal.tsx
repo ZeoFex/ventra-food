@@ -2,6 +2,14 @@
 
 import { formatCedi } from "@/lib/format-cedi";
 import {
+  guestPayloadToQrMenuOrder,
+  QR_QUEUE_EVENT,
+  readGuestOrdersQueue,
+  removeGuestOrderByRef,
+  type QrMenuOrder,
+  type QrMenuOrderStatus,
+} from "@/lib/qr-guest-orders";
+import {
   Check,
   Clock,
   QrCode,
@@ -18,88 +26,27 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 
+export type { QrMenuOrder, QrMenuOrderStatus };
+
 const BORDER = "#e0e0e0";
 const NAVY = "#1a2233";
 
-export type QrMenuOrderStatus = "pending" | "accepted";
-
-export type QrMenuOrder = {
-  id: string;
-  code: string;
-  tableOrName: string;
-  items: { name: string; qty: number }[];
-  total: number;
-  placedAt: string;
-  status: QrMenuOrderStatus;
-  phone?: string;
-};
-
-const GUEST_QUEUE_KEY = "ventra_guest_orders_queue";
-
-type GuestQueuePayload = {
-  ref: string;
-  table: string | null;
-  items: { id?: string; name: string; qty: number; unitPrice?: number }[];
-  total: number;
-  at: string;
-};
-
-function formatGuestPlacedAt(iso: string): string {
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return "Just now";
-  const diffMin = Math.floor((Date.now() - d.getTime()) / 60_000);
-  if (diffMin < 1) return "Just now";
-  if (diffMin < 60) return `${diffMin} min ago`;
-  const diffH = Math.floor(diffMin / 60);
-  if (diffH < 24) return `${diffH}h ago`;
-  return d.toLocaleDateString();
-}
-
-function initialOrders(): QrMenuOrder[] {
-  return [
-    {
-      id: "qr-1",
-      code: "QM-8K2F",
-      tableOrName: "Table 6",
-      items: [
-        { name: "Jollof & goat", qty: 2 },
-        { name: "Chapman", qty: 2 },
-      ],
-      total: 84.0,
-      placedAt: "3 min ago",
-      status: "pending",
-      phone: "+233 55 100 2200",
-    },
-    {
-      id: "qr-2",
-      code: "QM-8K2E",
-      tableOrName: "Patio · walk-up",
-      items: [
-        { name: "Fresh Basil Salad", qty: 1 },
-        { name: "Grilled fish", qty: 1 },
-      ],
-      total: 52.5,
-      placedAt: "8 min ago",
-      status: "pending",
-    },
-    {
-      id: "qr-3",
-      code: "QM-8K2D",
-      tableOrName: "Table 12",
-      items: [{ name: "Burger combo", qty: 3 }],
-      total: 96.0,
-      placedAt: "14 min ago",
-      status: "accepted",
-      phone: "+233 20 441 0099",
-    },
-  ];
+function mergeQueueIntoOrders(prev: QrMenuOrder[]): QrMenuOrder[] {
+  const pending = readGuestOrdersQueue().map(guestPayloadToQrMenuOrder);
+  const pendingCodes = new Set(pending.map((p) => p.code));
+  const accepted = prev.filter(
+    (o) => o.status === "accepted" && !pendingCodes.has(o.code),
+  );
+  return [...pending, ...accepted];
 }
 
 export type QrMenuOrdersModalProps = {
   open: boolean;
   onClose: () => void;
-  /** Fires when staff accepts an order — merge into POS cart via API later */
+  /** Staff accepts — merge into POS cart and remove from guest queue */
   onAcceptToPos?: (order: QrMenuOrder) => void;
+  /** Staff rejects — sync parent deferred refs */
+  onDismissQrOrder?: (code: string) => void;
 };
 
 type Tab = "new" | "accepted";
@@ -108,9 +55,10 @@ export function QrMenuOrdersModal({
   open,
   onClose,
   onAcceptToPos,
+  onDismissQrOrder,
 }: QrMenuOrdersModalProps) {
   const [mounted, setMounted] = useState(false);
-  const [orders, setOrders] = useState<QrMenuOrder[]>(initialOrders);
+  const [orders, setOrders] = useState<QrMenuOrder[]>([]);
   const [tab, setTab] = useState<Tab>("new");
   const [toast, setToast] = useState<string | null>(null);
   const titleId = useId();
@@ -128,38 +76,16 @@ export function QrMenuOrdersModal({
 
   useEffect(() => {
     if (!open) return;
-    try {
-      const raw = sessionStorage.getItem(GUEST_QUEUE_KEY);
-      if (!raw) return;
-      const queue = JSON.parse(raw) as GuestQueuePayload[];
-      if (!Array.isArray(queue)) return;
-      setOrders((prev) => {
-        const codes = new Set(prev.map((o) => o.code));
-        const injected: QrMenuOrder[] = [];
-        for (const q of queue) {
-          if (!q?.ref || codes.has(q.ref)) continue;
-          codes.add(q.ref);
-          injected.push({
-            id: `guest-${q.ref}`,
-            code: q.ref,
-            tableOrName: q.table?.trim()
-              ? `Table ${q.table.trim()}`
-              : "QR guest",
-            items: (q.items ?? []).map((i) => ({
-              name: i.name,
-              qty: Math.max(1, i.qty ?? 1),
-            })),
-            total: typeof q.total === "number" ? q.total : 0,
-            placedAt: formatGuestPlacedAt(q.at ?? ""),
-            status: "pending",
-          });
-        }
-        return injected.length ? [...injected, ...prev] : prev;
-      });
-    } catch {
-      /* ignore */
-    }
+    setOrders((prev) => mergeQueueIntoOrders(prev));
   }, [open]);
+
+  useEffect(() => {
+    const fn = () => {
+      setOrders((prev) => mergeQueueIntoOrders(prev));
+    };
+    window.addEventListener(QR_QUEUE_EVENT, fn);
+    return () => window.removeEventListener(QR_QUEUE_EVENT, fn);
+  }, []);
 
   useEffect(() => {
     if (!open) return;
@@ -182,7 +108,10 @@ export function QrMenuOrdersModal({
   );
 
   const visible = useMemo(
-    () => orders.filter((o) => (tab === "new" ? o.status === "pending" : o.status === "accepted")),
+    () =>
+      orders.filter((o) =>
+        tab === "new" ? o.status === "pending" : o.status === "accepted",
+      ),
     [orders, tab],
   );
 
@@ -194,16 +123,21 @@ export function QrMenuOrdersModal({
         ),
       );
       onAcceptToPos?.({ ...order, status: "accepted" });
-      setToast(`Accepted ${order.code} — ring kitchen or add to cart in backend.`);
+      setToast(`Accepted ${order.code} — merged into POS cart.`);
       setTab("accepted");
     },
     [onAcceptToPos],
   );
 
-  const reject = useCallback((id: string) => {
-    setOrders((list) => list.filter((o) => o.id !== id));
-    setToast("Order removed from queue.");
-  }, []);
+  const reject = useCallback(
+    (order: QrMenuOrder) => {
+      removeGuestOrderByRef(order.code);
+      onDismissQrOrder?.(order.code);
+      setOrders((list) => list.filter((o) => o.id !== order.id));
+      setToast("Order removed from queue.");
+    },
+    [onDismissQrOrder],
+  );
 
   if (!mounted || !open) return null;
 
@@ -251,7 +185,7 @@ export function QrMenuOrdersModal({
                   QR menu orders
                 </h2>
                 <p className="mt-0.5 text-xs text-[#6b7280]">
-                  Guests who ordered from the scanned menu ·{" "}
+                  From guest phones · fills POS when the cart is free ·{" "}
                   <span className="font-semibold text-[#1a2233]">
                     {pendingCount} new
                   </span>
@@ -268,11 +202,18 @@ export function QrMenuOrdersModal({
             </button>
           </header>
 
-          <div className="flex gap-1 border-b px-3 py-2" style={{ borderColor: BORDER }}>
+          <div
+            className="flex gap-1 border-b px-3 py-2"
+            style={{ borderColor: BORDER }}
+          >
             {(
               [
                 ["new", "New", pendingCount] as const,
-                ["accepted", "Accepted", orders.filter((o) => o.status === "accepted").length] as const,
+                [
+                  "accepted",
+                  "Accepted",
+                  orders.filter((o) => o.status === "accepted").length,
+                ] as const,
               ] satisfies [Tab, string, number][]
             ).map(([id, label, count]) => {
               const active = tab === id;
@@ -328,7 +269,10 @@ export function QrMenuOrdersModal({
                         </p>
                         {order.phone && (
                           <p className="mt-1 flex items-center gap-1 text-[11px] text-[#64748b]">
-                            <Smartphone className="h-3.5 w-3.5" strokeWidth={1.6} />
+                            <Smartphone
+                              className="h-3.5 w-3.5"
+                              strokeWidth={1.6}
+                            />
                             {order.phone}
                           </p>
                         )}
@@ -357,7 +301,7 @@ export function QrMenuOrdersModal({
                         </button>
                         <button
                           type="button"
-                          onClick={() => reject(order.id)}
+                          onClick={() => reject(order)}
                           className="flex items-center justify-center gap-1 rounded-lg border border-red-200 bg-white px-3 py-2.5 text-xs font-semibold text-red-600 hover:bg-red-50"
                         >
                           <XCircle className="h-4 w-4" strokeWidth={1.65} />
@@ -366,7 +310,7 @@ export function QrMenuOrdersModal({
                       </div>
                     ) : (
                       <p className="mt-3 rounded-lg bg-emerald-50/80 px-2 py-2 text-center text-[11px] font-semibold text-emerald-800">
-                        Accepted — sync to open check in your API next.
+                        Accepted — in POS or completed.
                       </p>
                     )}
                   </li>
@@ -380,8 +324,8 @@ export function QrMenuOrdersModal({
             style={{ borderColor: BORDER }}
           >
             <p className="mb-3 text-center text-[11px] text-[#9ca3af]">
-              Production: webhook from guest menu → this queue → accept merges
-              lines into cart or creates a ticket.
+              Demo uses shared browser storage. Production: server webhook +
+              staff devices.
             </p>
             <button
               type="button"
