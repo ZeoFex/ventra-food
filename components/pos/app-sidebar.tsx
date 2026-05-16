@@ -17,7 +17,7 @@ import {
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
-function RestroBitMark() {
+function VentraFoodMark() {
   return (
     <svg width="36" height="36" viewBox="0 0 36 36" aria-hidden>
       <polygon
@@ -114,27 +114,27 @@ export function AppSidebar() {
   return (
     <aside className="flex h-full w-[248px] shrink-0 flex-col border-r border-[var(--pos-border)] bg-white px-3 py-5">
       <div className="flex items-center gap-2.5 px-2 pb-6">
-        <RestroBitMark />
+        <VentraFoodMark />
         <span className="text-lg font-bold tracking-tight text-[var(--foreground)]">
-          RestroBit
+          Ventra Food
         </span>
       </div>
 
       <div className="mb-6 flex items-center gap-3 rounded-xl border border-[var(--pos-border)] bg-[#fafafa] px-3 py-2.5">
         <div className="flex h-10 w-10 items-center justify-center rounded-full bg-gradient-to-br from-orange-100 to-amber-50 text-sm font-semibold text-orange-700">
-          NZ
+          OK
         </div>
         <div className="min-w-0">
           <p className="truncate text-sm font-semibold text-[#111827]">
-            Nahid Zaman
+            Owusu Kenneth
           </p>
           <p className="truncate text-xs text-[var(--pos-muted)]">
-            Product Designer
+            Staff
           </p>
         </div>
       </div>
 
-      <nav className="flex-1 space-y-0.5 overflow-y-auto">
+      <nav className="pos-sidebar-scroll flex-1 space-y-0.5 overflow-y-auto pr-0.5">
         <NavItem icon={LayoutDashboard} label="Dashboard" href="/dashboard" />
         <NavItem icon={MonitorSmartphone} label="Pos" href="/" />
         <NavItem
