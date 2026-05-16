@@ -1,0 +1,92 @@
+@import "tailwindcss";
+
+:root {
+  --background: #f8f9fa;
+  --foreground: #1a1c23;
+  --pos-primary: #ff7f27;
+  --pos-primary-hover: #ea721d;
+  --pos-surface: #ffffff;
+  --pos-muted: #6b7280;
+  --pos-border: #e8eaed;
+  --pos-sidebar-active: #f0f1f3;
+  --pos-navy: #1a1c23;
+  --pos-success: #28a745;
+  --pos-success-hover: #218838;
+  --pos-badge-new: #3b82f6;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-inter);
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+}
+
+@media print {
+  @page {
+    margin: 8mm;
+    size: auto;
+  }
+
+  /* Hide app; thermal modal root is whitelisted below */
+  body * {
+    visibility: hidden;
+  }
+
+  .thermal-modal-root,
+  .thermal-modal-root * {
+    visibility: visible !important;
+  }
+
+  .thermal-print-hide {
+    display: none !important;
+  }
+
+  .thermal-modal-root {
+    position: static !important;
+    inset: auto !important;
+    left: auto !important;
+    top: auto !important;
+    width: 100% !important;
+    height: auto !important;
+    min-height: 0 !important;
+    max-height: none !important;
+    overflow: visible !important;
+    z-index: auto !important;
+    background: transparent !important;
+    box-shadow: none !important;
+  }
+
+  body {
+    background: #fff !important;
+  }
+
+  #thermal-receipt,
+  #thermal-kot {
+    position: relative !important;
+    left: auto !important;
+    top: auto !important;
+  }
+
+  .thermal-receipt-root,
+  .thermal-kot-root {
+    box-shadow: none !important;
+    border: none !important;
+    margin: 0 auto !important;
+    padding: 6mm 5mm !important;
+    max-width: 72mm !important;
+    width: 72mm !important;
+    border-radius: 0 !important;
+    outline: none !important;
+    page-break-inside: avoid;
+  }
+}
