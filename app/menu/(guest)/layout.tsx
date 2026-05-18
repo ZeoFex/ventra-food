@@ -3,6 +3,7 @@ import type { Metadata, Viewport } from "next";
 export const metadata: Metadata = {
   title: "Order · RestroBit",
   description: "Order food from your table — RestroBit QR menu",
+  referrer: "no-referrer",
 };
 
 export const viewport: Viewport = {

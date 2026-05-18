@@ -1,6 +1,6 @@
 /**
- * Guest → POS bridge: QR menu orders land here so staff POS can ingest them.
- * Uses localStorage (same-origin, shared across tabs) + BroadcastChannel for instant notify.
+ * Guest → POS bridge: orders sync via localStorage + BroadcastChannel on one device;
+ * cross-device uses Redis relay (see /api/qr-orders/* and NEXT_PUBLIC_QR_ORDER_RELAY_TOKEN).
  */
 
 export type QrMenuOrderStatus = "pending" | "accepted";
@@ -21,6 +21,12 @@ export const GUEST_ORDERS_QUEUE_KEY = "ventra_guest_orders_queue";
 export const QR_ORDERS_BROADCAST_CHANNEL = "ventra-guest-orders-v1";
 
 export const QR_QUEUE_EVENT = "ventra-qr-queue-updated";
+
+/** Dev-only trace for guest ↔ POS queue (filter DevTools by `ventra-qr`) */
+export function qrBridgeLog(scope: string, ...args: unknown[]): void {
+  if (process.env.NODE_ENV !== "development") return;
+  console.log(`[ventra-qr:${scope}]`, ...args);
+}
 
 export type GuestOrderPayload = {
   ref: string;
@@ -88,9 +94,34 @@ export function appendGuestOrder(payload: GuestOrderPayload): void {
     const queue = readGuestOrdersQueue();
     queue.push(payload);
     writeGuestOrdersQueue(queue.slice(-20));
+    qrBridgeLog("queue", "appendGuestOrder", {
+      ref: payload.ref,
+      queueLengthAfter: queue.slice(-20).length,
+      origin: typeof window !== "undefined" ? window.location.href : "",
+    });
     notifyGuestOrderPlaced(payload.ref);
-  } catch {
-    /* ignore */
+  } catch (e) {
+    qrBridgeLog("queue", "appendGuestOrder FAILED", e);
+  }
+}
+
+/** POS / poll path: skip duplicates when the same ref is delivered twice. */
+export function appendGuestOrderIfNew(payload: GuestOrderPayload): boolean {
+  if (typeof window === "undefined") return false;
+  try {
+    const queue = readGuestOrdersQueue();
+    if (queue.some((q) => q.ref === payload.ref)) return false;
+    queue.push(payload);
+    writeGuestOrdersQueue(queue.slice(-20));
+    qrBridgeLog("queue", "appendGuestOrderIfNew", {
+      ref: payload.ref,
+      queueLengthAfter: queue.slice(-20).length,
+    });
+    notifyGuestOrderPlaced(payload.ref);
+    return true;
+  } catch (e) {
+    qrBridgeLog("queue", "appendGuestOrderIfNew FAILED", e);
+    return false;
   }
 }
 

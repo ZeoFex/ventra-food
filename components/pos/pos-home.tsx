@@ -20,6 +20,7 @@ import {
   pushKitchenTicketForQrOrder,
 } from "@/lib/kitchen-board-queue";
 import {
+  appendGuestOrderIfNew,
   guestPayloadToQrMenuOrder,
   GUEST_ORDERS_QUEUE_KEY,
   migrateSessionGuestQueueToLocal,
@@ -28,6 +29,7 @@ import {
   QR_ORDERS_BROADCAST_CHANNEL,
   readGuestOrdersQueue,
   removeGuestOrderByRef,
+  type GuestOrderPayload,
 } from "@/lib/qr-guest-orders";
 import { gooeyToast } from "goey-toast";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -162,6 +164,37 @@ export function PosHome() {
 
   useEffect(() => {
     migrateSessionGuestQueueToLocal();
+  }, []);
+
+  /** Phone / other-device orders: Redis relay → local queue (poll, ~450ms). */
+  useEffect(() => {
+    const token = process.env.NEXT_PUBLIC_QR_ORDER_RELAY_TOKEN?.trim();
+    if (!token) return;
+
+    let cancelled = false;
+    const tick = async () => {
+      if (cancelled) return;
+      try {
+        const res = await fetch("/api/qr-orders/poll", {
+          headers: { "x-qr-relay-token": token },
+        });
+        if (!res.ok) return;
+        const data = (await res.json()) as { orders?: GuestOrderPayload[] };
+        const orders = Array.isArray(data.orders) ? data.orders : [];
+        for (const p of orders) {
+          appendGuestOrderIfNew(p);
+        }
+      } catch {
+        /* offline */
+      }
+    };
+
+    const id = window.setInterval(tick, 450);
+    void tick();
+    return () => {
+      cancelled = true;
+      window.clearInterval(id);
+    };
   }, []);
 
   useEffect(() => {

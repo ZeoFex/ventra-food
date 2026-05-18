@@ -20,10 +20,15 @@ export function MenuQrSetup() {
   const tableQrList = useMemo(() => {
     if (!origin || tableCount < 1) return [];
     const n = Math.min(MAX_TABLES, Math.max(1, Math.floor(tableCount)));
+    const qrTok =
+      typeof process.env.NEXT_PUBLIC_QR_ORDER_RELAY_TOKEN === "string"
+        ? process.env.NEXT_PUBLIC_QR_ORDER_RELAY_TOKEN.trim()
+        : "";
     return Array.from({ length: n }, (_, i) => {
       const num = i + 1;
       const u = new URL("/menu", origin);
       u.searchParams.set("table", String(num));
+      if (qrTok) u.searchParams.set("qr_t", qrTok);
       return { tableNum: num, url: u.toString() };
     });
   }, [origin, tableCount]);
@@ -53,7 +58,11 @@ export function MenuQrSetup() {
         </div>
         <div className="flex flex-wrap gap-2">
           <Link
-            href="/menu?table=1"
+            href={
+              process.env.NEXT_PUBLIC_QR_ORDER_RELAY_TOKEN?.trim()
+                ? `/menu?table=1&qr_t=${encodeURIComponent(process.env.NEXT_PUBLIC_QR_ORDER_RELAY_TOKEN.trim())}`
+                : "/menu?table=1"
+            }
             target="_blank"
             rel="noopener noreferrer"
             className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--pos-border)] bg-white px-3 py-2 text-sm font-medium text-[#374151] shadow-sm hover:bg-[#f9fafb]"
@@ -154,10 +163,34 @@ export function MenuQrSetup() {
         )}
 
         <div className="rounded-xl border border-amber-200/80 bg-amber-50/80 px-4 py-3 text-sm text-amber-950">
-          <p className="font-semibold">POS handoff</p>
+          <p className="font-semibold">
+            {process.env.NEXT_PUBLIC_QR_ORDER_RELAY_TOKEN?.trim()
+              ? "POS sync · Redis relay"
+              : "POS handoff (same browser only)"}
+          </p>
           <p className="mt-1 text-xs text-amber-900/90">
-            Guest orders include the table number in the order payload. In this demo it is stored in{" "}
-            <strong>session storage</strong>; connect your API so the POS and kitchen see the same table id.
+            {process.env.NEXT_PUBLIC_QR_ORDER_RELAY_TOKEN?.trim() ? (
+              <>
+                Guest links include <code className="rounded bg-amber-100/90 px-1 font-mono text-[10px]">qr_t</code>.
+                Orders POST to your deployment and staff POS polls Redis (same{" "}
+                <code className="rounded bg-amber-100/90 px-1 font-mono text-[10px]">
+                  KV_REST_*
+                </code>{" "}
+                env as Vercel KV / Upstash). Also still writes{" "}
+                <strong>localStorage</strong> on the guest device for instant confirmation UI.
+              </>
+            ) : (
+              <>
+                Without{" "}
+                <code className="rounded bg-amber-100/90 px-1 font-mono text-[10px]">
+                  NEXT_PUBLIC_QR_ORDER_RELAY_TOKEN
+                </code>{" "}
+                + Redis env vars, orders stay in{" "}
+                <strong>localStorage</strong> only — fine for two tabs on one PC, not for phones.
+                Redownload QR codes after enabling relay so URLs pick up{" "}
+                <code className="rounded bg-amber-100/90 px-1 font-mono text-[10px]">qr_t</code>.
+              </>
+            )}
           </p>
         </div>
       </div>

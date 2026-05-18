@@ -23,6 +23,7 @@ function roundMoney(n: number) {
 export function GuestMenuApp() {
   const searchParams = useSearchParams();
   const table = searchParams.get("table")?.trim() || "";
+  const qrRelayToken = searchParams.get("qr_t")?.trim() || "";
 
   const [categoryId, setCategoryId] = useState("all");
   const [query, setQuery] = useState("");
@@ -99,10 +100,25 @@ export function GuestMenuApp() {
         at: new Date().toISOString(),
       };
       appendGuestOrder(payload);
+
+      if (qrRelayToken) {
+        void fetch("/api/qr-orders/push", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-qr-relay-token": qrRelayToken,
+          },
+          body: JSON.stringify(payload),
+        }).then(async (res) => {
+          if (!res.ok) {
+            console.warn("[qr-relay] push failed", res.status);
+          }
+        });
+      }
     } catch {
       /* ignore */
     }
-  }, [cartLines, subtotal, table]);
+  }, [cartLines, subtotal, table, qrRelayToken]);
 
   return (
     <div className="flex min-h-dvh flex-col pb-[calc(4.5rem+env(safe-area-inset-bottom,0px))]">
