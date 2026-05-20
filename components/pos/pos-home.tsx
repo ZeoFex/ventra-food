@@ -8,6 +8,7 @@ import {
 import { AppSidebar } from "@/components/pos/app-sidebar";
 import { OrderCartPanel } from "@/components/pos/order-cart-panel";
 import { PosHeader } from "@/components/pos/pos-header";
+import { PosShiftGate } from "@/components/pos/pos-shift-gate";
 import { ProductCatalog } from "@/components/pos/product-catalog";
 import { playPosBeep, playQrOrderNotify } from "@/lib/pos-beep";
 import {
@@ -373,9 +374,10 @@ export function PosHome() {
   }, []);
 
   return (
-    <div className="flex h-screen overflow-hidden bg-[var(--background)]">
+    <div className="pos-shell flex h-screen overflow-hidden bg-[var(--background)]">
       <AppSidebar />
-      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+      <PosShiftGate>
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col">
         <PosHeader
           searchQuery={catalogSearch}
           onSearchChange={setCatalogSearch}
@@ -384,7 +386,7 @@ export function PosHome() {
           onOpenQrMenuOrders={() => setQrOrdersOpen(true)}
           qrOrdersPendingCount={qrOrdersPendingCount}
         />
-        <div className="flex min-h-0 min-w-0 flex-1 items-stretch py-3 pr-3">
+        <div className="flex min-h-0 min-w-0 flex-1 items-stretch gap-2 py-2 pr-2">
           <ProductCatalog
             onAddToCart={addToCart}
             qtyByProductId={qtyByProductId}
@@ -404,6 +406,7 @@ export function PosHome() {
           />
         </div>
       </div>
+      </PosShiftGate>
 
       <QrMenuOrdersModal
         open={qrOrdersOpen}

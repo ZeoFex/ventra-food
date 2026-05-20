@@ -8,10 +8,15 @@ import {
   KITCHEN_TICKETS_KEY,
   nextKitchenStatus,
   readKitchenTickets,
+  replaceKitchenTickets,
   updateKitchenTicketStatus,
   type KitchenBoardTicket,
   type KitchenTicketStatus,
 } from "@/lib/kitchen-board-queue";
+import {
+  fetchKitchenTicketsFromRelay,
+  isKitchenRelayClientConfigured,
+} from "@/lib/kitchen-ticket-relay-client";
 import { playKitchenIncomingTicket } from "@/lib/pos-beep";
 import { LogOut, UtensilsCrossed } from "lucide-react";
 import Link from "next/link";
@@ -113,7 +118,23 @@ export default function KitchenBoardPage() {
 
   useEffect(() => {
     if (!ready) return;
+
+    const relayEnabled = isKitchenRelayClientConfigured();
+    let cancelled = false;
+
+    const pullFromRelay = async () => {
+      if (cancelled || !relayEnabled) return;
+      const remote = await fetchKitchenTicketsFromRelay();
+      if (remote === null || cancelled) return;
+      replaceKitchenTickets(remote);
+      syncFromStorage();
+    };
+
     syncFromStorage();
+    if (relayEnabled) {
+      void pullFromRelay();
+    }
+
     const onEvt = () => syncFromStorage();
     window.addEventListener(KITCHEN_BOARD_EVENT, onEvt);
     const onStorage = (e: StorageEvent) => {
@@ -127,7 +148,14 @@ export default function KitchenBoardPage() {
     } catch {
       /* ignore */
     }
+
+    const pollId = relayEnabled
+      ? window.setInterval(() => void pullFromRelay(), 800)
+      : undefined;
+
     return () => {
+      cancelled = true;
+      if (pollId !== undefined) window.clearInterval(pollId);
       window.removeEventListener(KITCHEN_BOARD_EVENT, onEvt);
       window.removeEventListener("storage", onStorage);
       try {
@@ -206,6 +234,16 @@ export default function KitchenBoardPage() {
         <p className="text-sm text-slate-400">
           Flow: <span className="text-slate-300">New → Preparing → Ready →</span>{" "}
           completed. New tickets play a ring tone (once per ticket).
+          {isKitchenRelayClientConfigured() ? (
+            <span className="mt-1 block text-emerald-400/90">
+              Live sync on — orders from POS in other browsers appear here.
+            </span>
+          ) : (
+            <span className="mt-1 block text-amber-400/80">
+              Same-browser only — set KV_REST_* and NEXT_PUBLIC_QR_ORDER_RELAY_TOKEN
+              for cross-device KLD.
+            </span>
+          )}
         </p>
 
         {sorted.length === 0 ? (

@@ -38,6 +38,8 @@ Staff and operational screens live under the root `app/` tree:
 | `/customers` | Customers |
 | `/invoices` | Invoices |
 | `/payments` | Payments |
+| `/discounts` | Discounts & coupons (create codes, apply at POS) |
+| `/finances` | Finances — revenue, expenses, ledger (POS sales auto-post) |
 | `/reservations` | Reservations |
 | `/tables` | Tables |
 | `/settings` | Settings |
@@ -56,12 +58,14 @@ Guest layout sets dedicated **metadata** and **viewport** (theme color, safe mob
 
 ## Key implementation notes
 
-- **Guest menu UI:** `components/guest-menu/guest-menu-app.tsx` (client). Catalog data: `lib/guest-menu-data.ts`.
+- **Guest menu UI:** `components/guest-menu/guest-menu-app.tsx` — uses sellable menu + hierarchical categories from context.
+- **Menu categories:** `lib/menu-categories.ts`, persisted in `ventra_menu_categories_v1` alongside dishes (`ventra_sellable_dishes_v1`).
 - **QR setup:** `components/menu-qr/menu-qr-setup.tsx`, page entry `app/menu/qr/page.tsx`.
 - **POS shell:** Sidebar navigation in `components/pos/app-sidebar.tsx` (includes **QR menu** → `/menu/qr`).
-- **QR orders in POS:** `components/pos/qr-menu-orders-modal.tsx` lists demo + incoming orders. On open, it merges payloads from **`sessionStorage`** key **`ventra_guest_orders_queue`** (written when a guest taps **Place order**), keyed by order `ref` to avoid duplicates.
+- **QR orders in POS:** `components/pos/qr-menu-orders-modal.tsx` lists demo + incoming orders. On open, it merges payloads from **`sessionStorage`** key **`ventra_guest_orders_queue`** (written when a guest taps **Place order**), keyed by order `ref` to avoid duplicates. With **`KV_REST_API_URL`**, **`KV_REST_API_TOKEN`**, and **`NEXT_PUBLIC_QR_ORDER_RELAY_TOKEN`**, guest phones push to Redis and POS polls `/api/qr-orders/poll`.
+- **Kitchen board (KLD):** Tickets from **KOT & Print** (and QR→kitchen) sync through **`/api/kitchen-tickets`** when the same Redis + relay token env vars are set. POS pushes on fire; `/kitchen/board` polls every ~800ms. Status changes on the board PATCH back to Redis. Without Redis, tickets stay in **localStorage** (same browser only).
 
-> **Production:** Persist guest orders via your **API** (webhook or poll) instead of relying on `sessionStorage`, which is scoped per browser and not shared across staff devices or guest phones.
+> **Production:** Set Upstash/Vercel KV and a long random **`NEXT_PUBLIC_QR_ORDER_RELAY_TOKEN`** on every deployment (POS + kitchen URLs). Optional: **`NEXT_PUBLIC_KITCHEN_RELAY_TOKEN`** if you want a separate kitchen secret.
 
 ## Project layout (high level)
 

@@ -1,7 +1,13 @@
 /**
- * Live kitchen board queue (demo: same-browser localStorage + BroadcastChannel).
- * POS sends tickets here; /kitchen/board shows them. No feedback loop into POS.
+ * Kitchen board queue: localStorage + BroadcastChannel (same-browser instant updates).
+ * When KV + NEXT_PUBLIC_QR_ORDER_RELAY_TOKEN are set, tickets also sync via Redis relay
+ * (/api/kitchen-tickets) so POS and KLD can use different browsers/devices.
  */
+
+import {
+  patchKitchenTicketStatusOnRelay,
+  pushKitchenTicketToRelay,
+} from "@/lib/kitchen-ticket-relay-client";
 
 import type { QrMenuOrder } from "@/lib/qr-guest-orders";
 
@@ -128,6 +134,12 @@ function writeKitchenTickets(tickets: KitchenBoardTicket[]): void {
   }
 }
 
+/** Replace local queue (e.g. after polling Redis). */
+export function replaceKitchenTickets(tickets: KitchenBoardTicket[]): void {
+  writeKitchenTickets(tickets);
+  notifyKitchenBoardUpdated();
+}
+
 export function notifyKitchenBoardUpdated(): void {
   if (typeof window === "undefined") return;
   try {
@@ -172,6 +184,7 @@ export function appendKitchenTicket(
   list = [row, ...list].slice(0, MAX_TICKETS);
   writeKitchenTickets(list);
   notifyKitchenBoardUpdated();
+  void pushKitchenTicketToRelay(row);
   return true;
 }
 
@@ -185,6 +198,7 @@ export function updateKitchenTicketStatus(
   );
   writeKitchenTickets(list);
   notifyKitchenBoardUpdated();
+  void patchKitchenTicketStatusOnRelay(id, status);
 }
 
 /** Called when a guest QR order is merged into the POS cart — kitchen sees it immediately. */

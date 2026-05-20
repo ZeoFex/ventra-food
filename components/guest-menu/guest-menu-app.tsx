@@ -1,11 +1,13 @@
 "use client";
 
+import { useSellableMenu } from "@/components/sellable-menu/sellable-menu-context";
 import { formatCedi } from "@/lib/format-cedi";
+import type { GuestMenuItem } from "@/lib/guest-menu-data";
 import {
-  GUEST_MENU_CATEGORIES,
-  GUEST_MENU_ITEMS,
-  type GuestMenuItem,
-} from "@/lib/guest-menu-data";
+  categorySubtreeIds,
+  rootCategories,
+} from "@/lib/menu-categories";
+import { isPosProductOnMenu } from "@/lib/pos-catalog";
 import { appendGuestOrder, type GuestOrderPayload } from "@/lib/qr-guest-orders";
 import { ChevronDown, Minus, Plus, Search, ShoppingBag, X } from "lucide-react";
 import Image from "next/image";
@@ -24,6 +26,7 @@ export function GuestMenuApp() {
   const searchParams = useSearchParams();
   const table = searchParams.get("table")?.trim() || "";
   const qrRelayToken = searchParams.get("qr_t")?.trim() || "";
+  const { products, categories, hydrated } = useSellableMenu();
 
   const [categoryId, setCategoryId] = useState("all");
   const [query, setQuery] = useState("");
@@ -31,26 +34,49 @@ export function GuestMenuApp() {
   const [sheetOpen, setSheetOpen] = useState(false);
   const [orderDone, setOrderDone] = useState<string | null>(null);
 
+  const menuItems = useMemo((): GuestMenuItem[] => {
+    return products.filter(isPosProductOnMenu).map((p) => ({
+      id: p.id,
+      name: p.name,
+      price: p.price,
+      categoryId: p.categoryId,
+      imageSrc: p.imageSrc,
+      roundImage: p.round,
+    }));
+  }, [products]);
+
+  const menuCategories = useMemo(
+    () => [
+      { id: "all", label: "All" },
+      ...rootCategories(categories).map((c) => ({
+        id: c.id,
+        label: c.label,
+      })),
+    ],
+    [categories],
+  );
+
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
-    return GUEST_MENU_ITEMS.filter((item) => {
-      const catOk =
-        categoryId === "all" || item.categoryId === categoryId;
-      if (!catOk) return false;
+    return menuItems.filter((item) => {
+      if (categoryId !== "all") {
+        const subtree = categorySubtreeIds(categories, categoryId);
+        if (!subtree.has(item.categoryId)) return false;
+      }
       if (!q) return true;
       return item.name.toLowerCase().includes(q);
     });
-  }, [categoryId, query]);
+  }, [menuItems, categoryId, query, categories]);
 
   const cartLines = useMemo(() => {
     const lines: { item: GuestMenuItem; qty: number }[] = [];
     for (const [id, qty] of Object.entries(cart)) {
       if (qty <= 0) continue;
-      const item = GUEST_MENU_ITEMS.find((x) => x.id === id);
+      const item = menuItems.find((x) => x.id === id);
       if (item) lines.push({ item, qty });
     }
     return lines;
-  }, [cart]);
+  }, [cart, menuItems]);
 
   const subtotal = useMemo(
     () =>
@@ -120,6 +146,14 @@ export function GuestMenuApp() {
     }
   }, [cartLines, subtotal, table, qrRelayToken]);
 
+  if (!hydrated) {
+    return (
+      <div className="flex min-h-dvh items-center justify-center text-sm text-[#6b7280]">
+        Loading menu…
+      </div>
+    );
+  }
+
   return (
     <div className="flex min-h-dvh flex-col pb-[calc(4.5rem+env(safe-area-inset-bottom,0px))]">
       <header className="sticky top-0 z-30 border-b border-black/5 bg-white/95 shadow-sm backdrop-blur-md">
@@ -167,7 +201,7 @@ export function GuestMenuApp() {
         <div className="border-t border-black/[0.04] bg-white">
           <div className="mx-auto max-w-lg">
             <div className="flex gap-2 overflow-x-auto px-4 py-2.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-              {GUEST_MENU_CATEGORIES.map((c) => {
+              {menuCategories.map((c) => {
                 const active = categoryId === c.id;
                 return (
                   <button

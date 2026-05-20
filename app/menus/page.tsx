@@ -1,11 +1,5 @@
-import type { Metadata } from "next";
-import { MenusScreen } from "@/components/menus/menus-screen";
+import { redirect } from "next/navigation";
 
-export const metadata: Metadata = {
-  title: "Menu — Ventra Food",
-  description: "Dishes on sale: what staff sees on the POS. Hide, edit, or add items.",
-};
-
-export default function MenusPage() {
-  return <MenusScreen />;
+export default function MenusIndexPage() {
+  redirect("/menus/dishes");
 }

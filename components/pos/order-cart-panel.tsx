@@ -1,5 +1,10 @@
 "use client";
 
+import { useFinance } from "@/components/finance/finance-context";
+import { usePromotions } from "@/components/promotions/promotions-context";
+import { useStaff } from "@/components/staff/staff-context";
+import { readActivePosStaffId } from "@/lib/pos-active-staff";
+import type { FinancePayMethod } from "@/lib/finance-ledger";
 import {
   Check,
   ChevronDown,
@@ -8,8 +13,11 @@ import {
   QrCode,
   ShoppingBag,
   StickyNote,
+  Tag,
   Trash2,
+  X,
 } from "lucide-react";
+import { gooeyToast } from "goey-toast";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { formatCedi } from "@/lib/format-cedi";
 import type { PosCartLine } from "@/lib/pos-catalog";
@@ -60,7 +68,7 @@ function SelectField({
     <div className="relative">
       <select
         {...props}
-        className="w-full cursor-pointer appearance-none rounded-[10px] border border-[#e5e5e5] bg-white py-2.5 pl-3 pr-9 text-sm font-medium text-[#374151] outline-none"
+        className="w-full cursor-pointer appearance-none rounded-lg border border-[#e5e5e5] bg-white py-2 pl-2.5 pr-8 text-[13px] font-medium text-[#374151] outline-none"
       >
         {children}
       </select>
@@ -109,7 +117,25 @@ export function OrderCartPanel({
   const [draftInternalOpen, setDraftInternalOpen] = useState(false);
   const [dining, setDining] = useState("dine-in");
   const [table, setTable] = useState("floor");
-  const [discount, setDiscount] = useState(0);
+  const [manualDiscount, setManualDiscount] = useState(0);
+  const [appliedPromotionId, setAppliedPromotionId] = useState<string | null>(
+    null,
+  );
+  const [couponInput, setCouponInput] = useState("");
+
+  const {
+    hydrated: promosHydrated,
+    getPromotionById,
+    getPromotionByCode,
+    validateForOrder,
+    recordPromotionUse,
+  } = usePromotions();
+  const { recordSale } = useFinance();
+  const { getMemberById, getOpenShiftForStaff } = useStaff();
+
+  const appliedPromotion = appliedPromotionId
+    ? getPromotionById(appliedPromotionId)
+    : undefined;
 
   const draftControlledMode =
     typeof draftControlled === "boolean" && onDraftOpenChange != null;
@@ -132,6 +158,14 @@ export function OrderCartPanel({
     if (!Number.isFinite(raw) || raw < 0) return 0;
     return roundMoney(Math.min(raw, lineSubtotal));
   }, [lineSubtotal]);
+
+  const couponDiscount = useMemo(() => {
+    if (!appliedPromotion || lineSubtotal <= 0) return 0;
+    const result = validateForOrder(appliedPromotion, lineSubtotal);
+    return result.ok ? result.discountGhs : 0;
+  }, [appliedPromotion, lineSubtotal, validateForOrder]);
+
+  const discount = appliedPromotion ? couponDiscount : manualDiscount;
 
   const billTotal = useMemo(
     () => roundMoney(Math.max(0, lineSubtotal - discount)),
@@ -163,17 +197,77 @@ export function OrderCartPanel({
     () => ({
       discount: roundMoney(discount),
       total: billTotal,
+      discountLabel: appliedPromotion
+        ? `Coupon ${appliedPromotion.code}`
+        : discount > 0
+          ? "Discount"
+          : undefined,
     }),
-    [discount, billTotal],
+    [discount, billTotal, appliedPromotion],
   );
 
   useEffect(() => {
-    setDiscount((d) => clampDiscountInput(d));
+    setManualDiscount((d) => clampDiscountInput(d));
   }, [lineSubtotal, clampDiscountInput]);
 
   useEffect(() => {
-    if (lines.length === 0) setDiscount(0);
+    if (lines.length === 0) {
+      setManualDiscount(0);
+      setAppliedPromotionId(null);
+      setCouponInput("");
+    }
   }, [lines.length]);
+
+  useEffect(() => {
+    if (!appliedPromotionId || !appliedPromotion) return;
+    const result = validateForOrder(appliedPromotion, lineSubtotal);
+    if (!result.ok) {
+      setAppliedPromotionId(null);
+      setCouponInput("");
+      gooeyToast.warning("Coupon removed", { description: result.error });
+    }
+  }, [
+    appliedPromotionId,
+    appliedPromotion,
+    lineSubtotal,
+    validateForOrder,
+  ]);
+
+  const applyCoupon = useCallback(() => {
+    if (!promosHydrated) {
+      gooeyToast.warning("Coupons still loading");
+      return;
+    }
+    const promo = getPromotionByCode(couponInput);
+    if (!promo) {
+      gooeyToast.error("Invalid coupon", {
+        description: "No matching code. Check Discounts page.",
+      });
+      return;
+    }
+    const result = validateForOrder(promo, lineSubtotal);
+    if (!result.ok) {
+      gooeyToast.error("Cannot apply coupon", { description: result.error });
+      return;
+    }
+    setAppliedPromotionId(promo.id);
+    setCouponInput(promo.code);
+    setManualDiscount(0);
+    gooeyToast.success("Coupon applied", {
+      description: `${promo.code} (−${formatCedi(result.discountGhs)})`,
+    });
+  }, [
+    promosHydrated,
+    couponInput,
+    getPromotionByCode,
+    validateForOrder,
+    lineSubtotal,
+  ]);
+
+  const clearCoupon = useCallback(() => {
+    setAppliedPromotionId(null);
+    setCouponInput("");
+  }, []);
 
   const clearBillAutoPrint = useCallback(() => {
     setBillAutoPrint(false);
@@ -194,6 +288,30 @@ export function OrderCartPanel({
   const handlePaymentComplete = useCallback(
     (result: PaymentResult) => {
       if (result.kind === "settled" && result.done) {
+        if (appliedPromotionId) {
+          recordPromotionUse(appliedPromotionId);
+        }
+
+        const staffId = readActivePosStaffId();
+        const staffMember = staffId ? getMemberById(staffId) : undefined;
+        const openShift = staffId ? getOpenShiftForStaff(staffId) : undefined;
+        const channel = `${tableLabel} · ${diningLabel}`;
+        const itemCount = lines.reduce((s, l) => s + l.qty, 0);
+
+        recordSale({
+          orderNumber,
+          subtotalGhs: lineSubtotal,
+          discountGhs: roundMoney(discount),
+          totalGhs: result.totalDue,
+          method: result.method as FinancePayMethod,
+          channel,
+          itemCount,
+          staffName: staffMember?.name,
+          staffId: staffId ?? undefined,
+          shiftId: openShift?.id,
+          couponCode: appliedPromotion?.code,
+        });
+
         setBillAutoPrint(true);
         setBillPrintOpen(true);
         onPaymentSettled?.();
@@ -202,7 +320,21 @@ export function OrderCartPanel({
         console.info("[ventrafood] payment", result);
       }
     },
-    [onPaymentSettled],
+    [
+      onPaymentSettled,
+      appliedPromotionId,
+      recordPromotionUse,
+      recordSale,
+      getMemberById,
+      getOpenShiftForStaff,
+      tableLabel,
+      diningLabel,
+      lines,
+      orderNumber,
+      lineSubtotal,
+      discount,
+      appliedPromotion?.code,
+    ],
   );
 
   const handleResumeDraft = useCallback((draft: DraftTicket) => {
@@ -215,13 +347,13 @@ export function OrderCartPanel({
 
   return (
     <aside
-      className="flex h-full min-h-0 w-full max-w-[400px] shrink-0 flex-col overflow-hidden rounded-xl border shadow-[0_2px_12px_rgba(15,23,42,0.06)]"
+      className="flex h-full min-h-0 w-full max-w-[320px] shrink-0 flex-col overflow-hidden rounded-lg border shadow-[0_1px_8px_rgba(15,23,42,0.05)]"
       style={{
         backgroundColor: PANEL_BG,
         borderColor: PANEL_BORDER,
       }}
     >
-      <div className="shrink-0 space-y-3 p-4 pb-0">
+      <div className="shrink-0 space-y-2 p-3 pb-0">
         <div className="grid grid-cols-2 gap-2">
           <SelectField value={dining} onChange={(e) => setDining(e.target.value)}>
             <option value="dine-in">Dine-in</option>
@@ -241,7 +373,7 @@ export function OrderCartPanel({
         </div>
       </div>
 
-      <div className="shrink-0 px-4 pb-4 pt-1">
+      <div className="shrink-0 px-3 pb-2 pt-0.5">
         <div className="flex items-center gap-2.5">
           <OrderBagCheckIcon />
           <span className="text-sm font-bold tracking-tight text-black">
@@ -251,7 +383,7 @@ export function OrderCartPanel({
       </div>
 
       <div
-        className="min-h-0 flex-1 space-y-3 overflow-y-auto px-4 pb-2"
+        className="min-h-0 flex-1 space-y-2 overflow-y-auto px-3 pb-2"
         style={{ scrollbarGutter: "stable" }}
       >
         {cartEmpty ? (
@@ -265,7 +397,7 @@ export function OrderCartPanel({
           lines.map((line) => (
             <div
               key={line.id}
-              className="rounded-2xl border border-[#f0f0f0] bg-white p-4 shadow-[0_1px_3px_rgba(15,23,42,0.06)]"
+              className="rounded-xl border border-[#f0f0f0] bg-white p-3 shadow-[0_1px_3px_rgba(15,23,42,0.06)]"
             >
               <div className="flex items-center justify-between gap-3">
                 <div className="min-w-0">
@@ -334,28 +466,87 @@ export function OrderCartPanel({
         )}
       </div>
 
-      <div className="shrink-0 border-t border-[#eaeaea] bg-[#fafafa] p-4">
+      <div className="shrink-0 border-t border-[#eaeaea] bg-[#fafafa] p-3">
         <div className="space-y-2.5 text-sm">
           <div className="flex items-center justify-between text-[#6b7280]">
             <span>Sub total :</span>
             <span className="font-medium text-[#0f172a]">{formatCedi(lineSubtotal)}</span>
           </div>
+
+          <div className="space-y-2 rounded-lg border border-[#ececec] bg-white p-2.5">
+            <p className="text-[11px] font-semibold uppercase tracking-wide text-[#9ca3af]">
+              Coupon
+            </p>
+            {appliedPromotion ? (
+              <div className="flex items-center justify-between gap-2 rounded-md bg-emerald-50 px-2.5 py-2 ring-1 ring-emerald-200/80">
+                <div className="flex min-w-0 items-center gap-1.5">
+                  <Tag className="h-3.5 w-3.5 shrink-0 text-emerald-700" strokeWidth={2} />
+                  <span className="truncate font-mono text-xs font-bold text-emerald-900">
+                    {appliedPromotion.code}
+                  </span>
+                  <span className="text-xs text-emerald-800">
+                    −{formatCedi(couponDiscount)}
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={clearCoupon}
+                  className="shrink-0 rounded p-1 text-emerald-800 hover:bg-emerald-100"
+                  aria-label="Remove coupon"
+                >
+                  <X className="h-3.5 w-3.5" strokeWidth={2} />
+                </button>
+              </div>
+            ) : (
+              <div className="flex gap-1.5">
+                <input
+                  type="text"
+                  value={couponInput}
+                  onChange={(e) => setCouponInput(e.target.value.toUpperCase())}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      applyCoupon();
+                    }
+                  }}
+                  placeholder="Code"
+                  className="min-w-0 flex-1 rounded-md border border-[#e5e5e5] bg-white px-2 py-1.5 font-mono text-xs uppercase outline-none focus-visible:border-[#f27a21] focus-visible:ring-1 focus-visible:ring-[#f27a21]/30"
+                  aria-label="Coupon code"
+                />
+                <button
+                  type="button"
+                  onClick={applyCoupon}
+                  disabled={!couponInput.trim() || cartEmpty}
+                  className="shrink-0 rounded-md px-2.5 py-1.5 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:opacity-45"
+                  style={{ backgroundColor: CART_ORANGE }}
+                >
+                  Apply
+                </button>
+              </div>
+            )}
+          </div>
+
           <div className="flex items-center justify-between gap-2 text-[#6b7280]">
-            <span className="shrink-0">Discount :</span>
+            <span className="shrink-0">
+              {appliedPromotion ? "Coupon discount :" : "Discount :"}
+            </span>
             <span className="inline-flex min-w-0 flex-1 items-center justify-end gap-1.5 font-medium text-[#0f172a]">
-              <Pencil className="h-3.5 w-3.5 shrink-0 text-[#c4c4c4]" strokeWidth={1.6} />
+              {!appliedPromotion ? (
+                <Pencil className="h-3.5 w-3.5 shrink-0 text-[#c4c4c4]" strokeWidth={1.6} />
+              ) : null}
               <input
                 type="number"
                 inputMode="decimal"
                 min={0}
                 step={0.5}
+                readOnly={Boolean(appliedPromotion)}
                 value={Number.isFinite(discount) ? discount : 0}
                 onChange={(e) => {
                   const v = Number.parseFloat(e.target.value);
-                  setDiscount(clampDiscountInput(v));
+                  setManualDiscount(clampDiscountInput(v));
                 }}
-                onBlur={() => setDiscount((d) => clampDiscountInput(d))}
-                className="w-[5.5rem] rounded-md border border-[#e5e5e5] bg-white px-2 py-1 text-right text-sm tabular-nums outline-none focus-visible:border-[#f27a21] focus-visible:ring-1 focus-visible:ring-[#f27a21]/30"
+                onBlur={() => setManualDiscount((d) => clampDiscountInput(d))}
+                className="w-[5.5rem] rounded-md border border-[#e5e5e5] bg-white px-2 py-1 text-right text-sm tabular-nums outline-none focus-visible:border-[#f27a21] focus-visible:ring-1 focus-visible:ring-[#f27a21]/30 disabled:bg-[#f9fafb] disabled:text-[#6b7280]"
                 aria-label="Order discount amount"
               />
             </span>
@@ -372,7 +563,7 @@ export function OrderCartPanel({
               type="button"
               disabled={cartEmpty}
               onClick={() => setKotPrintOpen(true)}
-              className="flex min-h-[2.75rem] flex-[3] items-center justify-center rounded-xl text-sm font-semibold text-white transition-colors hover:opacity-95 disabled:cursor-not-allowed disabled:opacity-45"
+              className="flex min-h-[2.25rem] flex-[3] items-center justify-center rounded-lg text-[13px] font-semibold text-white transition-colors hover:opacity-95 disabled:cursor-not-allowed disabled:opacity-45"
               style={{ backgroundColor: CART_NAVY }}
             >
               KOT & Print
@@ -380,25 +571,18 @@ export function OrderCartPanel({
             <button
               type="button"
               onClick={() => setDraftModalOpen(true)}
-              className="flex min-h-[2.75rem] flex-1 items-center justify-center gap-1.5 rounded-xl border border-[#d1d5db] bg-white text-sm font-semibold text-[#6b7280] shadow-sm hover:bg-[#f9fafb]"
+              className="flex min-h-[2.25rem] flex-1 items-center justify-center gap-1 rounded-lg border border-[#d1d5db] bg-white text-[13px] font-semibold text-[#6b7280] shadow-sm hover:bg-[#f9fafb]"
             >
               <FileText className="h-4 w-4 shrink-0" strokeWidth={1.6} />
               Draft
             </button>
           </div>
-          <p className="text-[11px] leading-snug text-[#9ca3af]">
-            <strong className="font-semibold text-[#6b7280]">KOT &amp; Print</strong>{" "}
-            sends this ticket to the{" "}
-            <strong className="font-semibold text-[#6b7280]">kitchen board</strong>{" "}
-            instantly and opens the printer preview. Table QR orders also appear on
-            the board when they hit the cart.
-          </p>
           <div className="flex gap-2">
             <button
               type="button"
               disabled={cartEmpty}
               onClick={() => setCollectPaymentOpen(true)}
-              className="flex min-h-[2.75rem] flex-1 items-center justify-center rounded-xl text-sm font-semibold text-white shadow-sm transition-colors hover:opacity-95 disabled:cursor-not-allowed disabled:opacity-45"
+              className="flex min-h-[2.25rem] flex-1 items-center justify-center rounded-lg text-[13px] font-semibold text-white shadow-sm transition-colors hover:opacity-95 disabled:cursor-not-allowed disabled:opacity-45"
               style={{ backgroundColor: CART_ORANGE }}
             >
               Bill & Payment
@@ -407,7 +591,7 @@ export function OrderCartPanel({
               type="button"
               disabled={cartEmpty}
               onClick={() => setBillPrintOpen(true)}
-              className="flex min-h-[2.75rem] flex-1 items-center justify-center rounded-xl text-sm font-semibold text-white transition-colors hover:opacity-95 disabled:cursor-not-allowed disabled:opacity-45"
+              className="flex min-h-[2.25rem] flex-1 items-center justify-center rounded-lg text-[13px] font-semibold text-white transition-colors hover:opacity-95 disabled:cursor-not-allowed disabled:opacity-45"
               style={{ backgroundColor: CART_GREEN }}
             >
               Bill & Print

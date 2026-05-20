@@ -1,26 +1,13 @@
 /** Sellable dishes / POS catalog — ids stable for cart + QR name lookup */
 
-export const POS_CATEGORIES = [
-  "Show All",
-  "Rice",
-  "Beverages",
-  "Salads",
-  "Soup",
-  "Pizza",
-  "Grill",
-  "Snacks",
-] as const;
-
-export type PosCategory = (typeof POS_CATEGORIES)[number];
-export type PosShelfCategory = Exclude<PosCategory, "Show All">;
-
 export type PosProduct = {
   id: string;
   name: string;
   price: number;
   imageSrc: string;
   round: boolean;
-  category: PosShelfCategory;
+  /** References `MenuCategory.id` from sellable menu context */
+  categoryId: string;
   brand: "house" | "import";
   /** When false, dish is hidden from the POS grid (still editable on Menu page). */
   active?: boolean;
@@ -35,7 +22,7 @@ export const DEFAULT_SELLABLE_DISHES: PosProduct[] = [
     imageSrc:
       "https://images.unsplash.com/photo-1604329760661-e71dc83f8f26?w=400&h=300&fit=crop",
     round: false,
-    category: "Rice",
+    categoryId: "cat-rice",
     brand: "house",
     active: true,
   },
@@ -46,7 +33,7 @@ export const DEFAULT_SELLABLE_DISHES: PosProduct[] = [
     imageSrc:
       "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=400&h=300&fit=crop",
     round: true,
-    category: "Salads",
+    categoryId: "cat-salads",
     brand: "house",
     active: true,
   },
@@ -57,7 +44,7 @@ export const DEFAULT_SELLABLE_DISHES: PosProduct[] = [
     imageSrc:
       "https://images.unsplash.com/photo-1565299624946-b28f40a0ae38?w=400&h=300&fit=crop",
     round: false,
-    category: "Snacks",
+    categoryId: "cat-snacks",
     brand: "import",
     active: true,
   },
@@ -68,7 +55,7 @@ export const DEFAULT_SELLABLE_DISHES: PosProduct[] = [
     imageSrc:
       "https://images.unsplash.com/photo-1568901346375-23c9450c58cd?w=400&h=300&fit=crop",
     round: true,
-    category: "Grill",
+    categoryId: "cat-grill",
     brand: "import",
     active: true,
   },
@@ -79,7 +66,7 @@ export const DEFAULT_SELLABLE_DISHES: PosProduct[] = [
     imageSrc:
       "https://images.unsplash.com/photo-1540189549336-e6e99c3679fe?w=400&h=300&fit=crop",
     round: false,
-    category: "Salads",
+    categoryId: "cat-salads",
     brand: "house",
     active: true,
   },
@@ -90,7 +77,7 @@ export const DEFAULT_SELLABLE_DISHES: PosProduct[] = [
     imageSrc:
       "https://images.unsplash.com/photo-1567620905732-2d1ec7ab7445?w=400&h=300&fit=crop",
     round: true,
-    category: "Grill",
+    categoryId: "cat-grill",
     brand: "house",
     active: true,
   },
@@ -101,7 +88,7 @@ export const DEFAULT_SELLABLE_DISHES: PosProduct[] = [
     imageSrc:
       "https://images.unsplash.com/photo-1512627776951-a55541f7350d?w=400&h=300&fit=crop",
     round: false,
-    category: "Pizza",
+    categoryId: "cat-pizza",
     brand: "import",
     active: true,
   },
@@ -112,7 +99,7 @@ export const DEFAULT_SELLABLE_DISHES: PosProduct[] = [
     imageSrc:
       "https://images.unsplash.com/photo-1547592166-23ac45744acd?w=400&h=300&fit=crop",
     round: true,
-    category: "Soup",
+    categoryId: "cat-soup",
     brand: "house",
     active: true,
   },
@@ -123,7 +110,7 @@ export const DEFAULT_SELLABLE_DISHES: PosProduct[] = [
     imageSrc:
       "https://images.unsplash.com/photo-1556679343-c7107240effb?w=400&h=300&fit=crop",
     round: false,
-    category: "Beverages",
+    categoryId: "cat-beverages",
     brand: "import",
     active: true,
   },

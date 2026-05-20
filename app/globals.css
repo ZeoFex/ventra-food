@@ -71,6 +71,31 @@ body {
   background: color-mix(in srgb, var(--pos-primary) 55%, #9ca3af);
 }
 
+/* Horizontal category chips — thin track (avoids thick OS scrollbar) */
+.pos-category-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: #d1d5db transparent;
+}
+
+.pos-category-scroll::-webkit-scrollbar {
+  height: 4px;
+}
+
+.pos-category-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.pos-category-scroll::-webkit-scrollbar-thumb {
+  border-radius: 9999px;
+  background: #d1d5db;
+}
+
+/* POS shell: slightly denser UI so 100% browser zoom fits more on screen */
+.pos-shell {
+  font-size: 13px;
+  line-height: 1.4;
+}
+
 @media print {
   @page {
     margin: 8mm;

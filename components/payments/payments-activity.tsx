@@ -1,6 +1,12 @@
 "use client";
 
+import { useFinance } from "@/components/finance/finance-context";
 import { formatCedi } from "@/lib/format-cedi";
+import {
+  filterEntriesByRange,
+  saleEntryToPaymentRow,
+  type FinanceDateRange,
+} from "@/lib/finance-ledger";
 import {
   Banknote,
   CreditCard,
@@ -24,75 +30,11 @@ export type PaymentRow = {
   staff?: string;
 };
 
-const ROWS: PaymentRow[] = [
-  {
-    id: "TXN-9A2F",
-    time: "14:22",
-    orderRef: "#1042",
-    tableOrChannel: "T12 · Dine-in",
-    method: "momo",
-    amount: 185.0,
-    tip: 10,
-    status: "settled",
-    staff: "Nahid",
-  },
-  {
-    id: "TXN-9A2E",
-    time: "14:05",
-    orderRef: "#1041",
-    tableOrChannel: "Takeaway",
-    method: "cash",
-    amount: 45.0,
-    status: "settled",
-    staff: "Nahid",
-  },
-  {
-    id: "TXN-9A2D",
-    time: "13:48",
-    orderRef: "#1040",
-    tableOrChannel: "T04 · Dine-in",
-    method: "card",
-    amount: 220.0,
-    tip: 20,
-    status: "settled",
-    staff: "Kojo",
-  },
-  {
-    id: "TXN-9A2C",
-    time: "13:15",
-    orderRef: "#1039",
-    tableOrChannel: "QR menu",
-    method: "momo",
-    amount: 62.5,
-    status: "pending",
-    staff: "System",
-  },
-  {
-    id: "TXN-9A2B",
-    time: "12:50",
-    orderRef: "#1038",
-    tableOrChannel: "T06",
-    method: "cash",
-    amount: 132.0,
-    status: "refunded",
-  },
-  {
-    id: "TXN-9A2A",
-    time: "12:20",
-    orderRef: "#1037",
-    tableOrChannel: "Corporate",
-    method: "due",
-    amount: 890.0,
-    status: "settled",
-    staff: "Nahid",
-  },
-];
-
-const RANGE_FILTERS = [
-  { id: "today" as const, label: "Today" },
-  { id: "7d" as const, label: "7 days" },
-  { id: "30d" as const, label: "30 days" },
-  { id: "all" as const, label: "All" },
+const RANGE_FILTERS: { id: FinanceDateRange; label: string }[] = [
+  { id: "today", label: "Today" },
+  { id: "7d", label: "7 days" },
+  { id: "30d", label: "30 days" },
+  { id: "all", label: "All" },
 ];
 
 const METHOD_FILTERS: { id: "all" | PayMethod; label: string }[] = [
@@ -140,42 +82,50 @@ function statusStyle(s: PayStatus) {
 }
 
 export function PaymentsActivity() {
-  const [range, setRange] = useState<(typeof RANGE_FILTERS)[number]["id"]>(
-    "today",
-  );
+  const { entries, hydrated } = useFinance();
+  const [range, setRange] = useState<FinanceDateRange>("today");
   const [method, setMethod] = useState<(typeof METHOD_FILTERS)[number]["id"]>(
     "all",
   );
 
+  const rows = useMemo((): PaymentRow[] => {
+    const sales = filterEntriesByRange(entries, range).filter(
+      (e) => e.kind === "sale",
+    );
+    return sales.map(saleEntryToPaymentRow);
+  }, [entries, range]);
+
   const visible = useMemo(
     () =>
-      method === "all"
-        ? ROWS
-        : ROWS.filter((r) => r.method === method),
-    [method],
+      method === "all" ? rows : rows.filter((r) => r.method === method),
+    [method, rows],
   );
 
   const stats = useMemo(() => {
-    const settled = ROWS.filter((r) => r.status === "settled");
-    const gross = settled.reduce((s, r) => s + r.amount + (r.tip ?? 0), 0);
-    const tips = settled.reduce((s, r) => s + (r.tip ?? 0), 0);
-    const pending = ROWS.filter((r) => r.status === "pending").length;
-    const refunded = ROWS.filter((r) => r.status === "refunded").length;
+    const gross = rows.reduce((s, r) => s + r.amount, 0);
     return {
       gross,
-      tips,
-      count: ROWS.length,
-      pending,
-      refunded,
+      tips: 0,
+      count: rows.length,
+      pending: 0,
+      refunded: 0,
     };
-  }, []);
+  }, [rows]);
+
+  if (!hydrated) {
+    return (
+      <div className="flex items-center justify-center p-16 text-sm text-[#9ca3af]">
+        Loading payments…
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6 p-4 sm:p-6">
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <div className="rounded-xl border border-[var(--pos-border)] bg-white p-5 shadow-[0_1px_3px_rgba(15,23,42,0.06)]">
           <p className="text-xs font-semibold uppercase tracking-wide text-[#9ca3af]">
-            Gross (sample)
+            Gross
           </p>
           <p className="mt-2 text-2xl font-bold tabular-nums text-[var(--foreground)]">
             {formatCedi(stats.gross)}
@@ -297,7 +247,7 @@ export function PaymentsActivity() {
                     {formatCedi(row.amount)}
                   </td>
                   <td className="px-4 py-3.5 text-right text-[#6b7280] tabular-nums sm:px-5">
-                    {row.tip != null ? formatCedi(row.tip) : "—"}
+                    —
                   </td>
                   <td className="px-4 py-3.5 sm:px-5">
                     <span
@@ -316,9 +266,17 @@ export function PaymentsActivity() {
         </div>
       </div>
 
+      {rows.length === 0 ? (
+        <p className="rounded-xl border border-dashed border-[var(--pos-border)] bg-white px-6 py-10 text-center text-sm text-[#6b7280]">
+          No POS payments in this period. Complete{" "}
+          <strong className="font-semibold text-[#374151]">Bill &amp; Payment</strong>{" "}
+          on the register to record a sale.
+        </p>
+      ) : null}
+
       <p className="text-center text-xs text-[#9ca3af]">
-        Sample ledger for UI — date range pills are ready to wire; list is
-        unchanged until your API is connected.
+        Same data as Finances — settled POS sales only. API sync when you wire the
+        backend.
       </p>
     </div>
   );

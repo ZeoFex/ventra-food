@@ -15,6 +15,7 @@ export type ThermalReceiptLine = {
 export type ThermalReceiptSummary = {
   discount: number;
   total: number;
+  discountLabel?: string;
 };
 
 export type ThermalBillPreviewModalProps = {
@@ -265,12 +266,16 @@ export function ThermalBillPreviewModal({
                 <span className="text-black/55">Subtotal</span>
                 <span className="tabular-nums">{formatCedi(itemsGross)}</span>
               </div>
-              <div className="flex justify-between">
-                <span className="text-black/55">Discount</span>
-                <span className="tabular-nums">
-                  −{formatCedi(summary.discount)}
-                </span>
-              </div>
+              {summary.discount > 0 ? (
+                <div className="flex justify-between">
+                  <span className="text-black/55">
+                    {summary.discountLabel ?? "Discount"}
+                  </span>
+                  <span className="tabular-nums">
+                    −{formatCedi(summary.discount)}
+                  </span>
+                </div>
+              ) : null}
               {showAdjustment && (
                 <div className="flex justify-between">
                   <span className="text-black/55">Other charges</span>

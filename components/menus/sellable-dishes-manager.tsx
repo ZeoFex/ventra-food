@@ -1,19 +1,21 @@
 "use client";
 
 import { useSellableMenu } from "@/components/sellable-menu/sellable-menu-context";
+import { MenuCategoriesPanel } from "@/components/menus/menu-categories-panel";
 import { formatCedi } from "@/lib/format-cedi";
 import {
-  POS_CATEGORIES,
-  isPosProductOnMenu,
-  roundMoney,
-  type PosCategory,
-  type PosProduct,
-  type PosShelfCategory,
-} from "@/lib/pos-catalog";
+  categoryOptionLabel,
+  categorySubtreeIds,
+  childCategories,
+  rootCategories,
+} from "@/lib/menu-categories";
+import { isPosProductOnMenu, roundMoney, type PosProduct } from "@/lib/pos-catalog";
 import { gooeyToast } from "goey-toast";
 import { Pencil, Search, Trash2, UtensilsCrossed } from "lucide-react";
 import Image from "next/image";
+import Link from "next/link";
 import {
+  Fragment,
   useCallback,
   useEffect,
   useId,
@@ -21,10 +23,6 @@ import {
   useState,
 } from "react";
 import { createPortal } from "react-dom";
-
-const SHELF_OPTIONS = POS_CATEGORIES.filter(
-  (c): c is PosShelfCategory => c !== "Show All",
-);
 
 type TabId = "all" | "on_pos" | "hidden";
 
@@ -47,10 +45,14 @@ function DishFormModal({
   initial: PosProduct | null;
   onSave: (p: PosProduct) => void;
 }) {
+  const { categories } = useSellableMenu();
   const titleId = useId();
+  const roots = useMemo(() => rootCategories(categories), [categories]);
+  const defaultCatId = roots[0]?.id ?? categories[0]?.id ?? "";
+
   const [name, setName] = useState("");
   const [price, setPrice] = useState("");
-  const [category, setCategory] = useState<PosShelfCategory>("Grill");
+  const [categoryId, setCategoryId] = useState(defaultCatId);
   const [imageSrc, setImageSrc] = useState("");
   const [round, setRound] = useState(false);
   const [active, setActive] = useState(true);
@@ -60,21 +62,21 @@ function DishFormModal({
     if (mode === "edit" && initial) {
       setName(initial.name);
       setPrice(String(initial.price));
-      setCategory(initial.category);
+      setCategoryId(initial.categoryId);
       setImageSrc(initial.imageSrc);
       setRound(initial.round);
       setActive(initial.active !== false);
     } else {
       setName("");
       setPrice("");
-      setCategory("Grill");
+      setCategoryId(defaultCatId);
       setImageSrc(
         "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=400&h=300&fit=crop",
       );
       setRound(false);
       setActive(true);
     }
-  }, [open, mode, initial]);
+  }, [open, mode, initial, defaultCatId]);
 
   useEffect(() => {
     if (!open) return;
@@ -99,6 +101,12 @@ function DishFormModal({
       if (!Number.isFinite(pNum) || pNum < 0) {
         gooeyToast.warning("Invalid price", {
           description: "Use a positive number (GHS).",
+        });
+        return;
+      }
+      if (!categoryId || !categories.some((c) => c.id === categoryId)) {
+        gooeyToast.warning("Pick a category", {
+          description: "Add a menu section under “Menu sections” first.",
         });
         return;
       }
@@ -128,7 +136,7 @@ function DishFormModal({
         price: roundMoney(pNum),
         imageSrc: url,
         round,
-        category,
+        categoryId,
         brand: initial?.brand ?? "house",
         active,
       };
@@ -141,9 +149,10 @@ function DishFormModal({
     [
       name,
       price,
+      categoryId,
+      categories,
       imageSrc,
       round,
-      category,
       active,
       mode,
       initial,
@@ -212,16 +221,20 @@ function DishFormModal({
                 Category
               </label>
               <select
-                value={category}
-                onChange={(e) =>
-                  setCategory(e.target.value as PosShelfCategory)
-                }
+                value={categoryId}
+                onChange={(e) => setCategoryId(e.target.value)}
                 className="mt-1.5 w-full cursor-pointer rounded-lg border border-[var(--pos-border)] bg-white px-3 py-2.5 text-sm text-[#374151] outline-none"
               >
-                {SHELF_OPTIONS.map((c) => (
-                  <option key={c} value={c}>
-                    {c}
-                  </option>
+                {roots.map((r) => (
+                  <Fragment key={r.id}>
+                    <option value={r.id}>{r.label}</option>
+                    {childCategories(categories, r.id).map((ch) => (
+                      <option key={ch.id} value={ch.id}>
+                        {"  └ "}
+                        {ch.label}
+                      </option>
+                    ))}
+                  </Fragment>
                 ))}
               </select>
             </div>
@@ -280,31 +293,62 @@ function DishFormModal({
 export function SellableDishesManager({
   createOpen,
   onCreateOpenChange,
+  showCategoriesPanel = false,
 }: {
   createOpen: boolean;
   onCreateOpenChange: (open: boolean) => void;
+  /** When true, shows category editor above the dish list (legacy combined view). */
+  showCategoriesPanel?: boolean;
 }) {
-  const { products, hydrated, addProduct, updateProduct, removeProduct } =
-    useSellableMenu();
+  const {
+    products,
+    categories,
+    hydrated,
+    addProduct,
+    updateProduct,
+    removeProduct,
+  } = useSellableMenu();
   const [query, setQuery] = useState("");
   const [tab, setTab] = useState<TabId>("all");
-  const [category, setCategory] = useState<PosCategory>("Show All");
+  const [filterRoot, setFilterRoot] = useState<string>("all");
+  const [filterSub, setFilterSub] = useState<string>("all");
   const [editTarget, setEditTarget] = useState<PosProduct | null>(null);
+
+  const roots = useMemo(() => rootCategories(categories), [categories]);
+  const subRowParent =
+    filterRoot !== "all"
+      ? roots.find((r) => r.id === filterRoot) ?? null
+      : null;
+  const subRowKids = subRowParent
+    ? childCategories(categories, subRowParent.id)
+    : [];
+
+  useEffect(() => {
+    setFilterSub("all");
+  }, [filterRoot]);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     return products.filter((p) => {
       if (tab === "on_pos" && !isPosProductOnMenu(p)) return false;
       if (tab === "hidden" && isPosProductOnMenu(p)) return false;
-      if (category !== "Show All" && p.category !== category) return false;
+
+      if (filterRoot !== "all") {
+        if (filterSub === "all") {
+          const subtree = categorySubtreeIds(categories, filterRoot);
+          if (!subtree.has(p.categoryId)) return false;
+        } else if (p.categoryId !== filterSub) return false;
+      }
+
       if (!q) return true;
+      const path = categoryOptionLabel(categories, p.categoryId).toLowerCase();
       return (
         p.name.toLowerCase().includes(q) ||
         p.id.toLowerCase().includes(q) ||
-        p.category.toLowerCase().includes(q)
+        path.includes(q)
       );
     });
-  }, [products, query, tab, category]);
+  }, [products, query, tab, filterRoot, filterSub, categories]);
 
   const onPosCount = useMemo(
     () => products.filter(isPosProductOnMenu).length,
@@ -357,6 +401,21 @@ export function SellableDishesManager({
   return (
     <div className="p-4 sm:p-6">
       <div className="mx-auto max-w-5xl space-y-6">
+        {showCategoriesPanel ? <MenuCategoriesPanel /> : null}
+
+        {!showCategoriesPanel ? (
+          <p className="text-sm text-[var(--pos-muted)]">
+            Organize items under{" "}
+            <Link
+              href="/menus/categories"
+              className="font-semibold text-[var(--pos-primary)] hover:underline"
+            >
+              Categories
+            </Link>{" "}
+            (sections and submenus).
+          </p>
+        ) : null}
+
         <div className="rounded-xl border border-[var(--pos-border)] bg-white px-4 py-3 text-sm text-[var(--pos-muted)] shadow-sm">
           <strong className="text-[var(--foreground)]">{onPosCount}</strong> of{" "}
           <strong>{products.length}</strong> dishes visible on the POS grid.
@@ -394,26 +453,76 @@ export function SellableDishesManager({
           </div>
         </div>
 
-        <div className="-mx-1 overflow-x-auto pb-1">
-          <div className="flex w-max min-w-full gap-2 px-1">
-            {POS_CATEGORIES.map((c) => {
-              const active = c === category;
-              return (
+        <div className="space-y-2">
+          <p className="text-[11px] font-semibold uppercase tracking-wide text-[#9ca3af]">
+            Filter by menu section
+          </p>
+          <div className="-mx-1 overflow-x-auto pb-1">
+            <div className="flex w-max min-w-full gap-2 px-1">
+              <button
+                type="button"
+                onClick={() => setFilterRoot("all")}
+                className={`shrink-0 rounded-full px-3 py-1.5 text-xs font-semibold transition-colors ${
+                  filterRoot === "all"
+                    ? "bg-[#1a1c23] text-white"
+                    : "border border-[var(--pos-border)] bg-white text-[#4b5563] hover:bg-[#f9fafb]"
+                }`}
+              >
+                All sections
+              </button>
+              {roots.map((r) => {
+                const active = filterRoot === r.id;
+                return (
+                  <button
+                    key={r.id}
+                    type="button"
+                    onClick={() => setFilterRoot(r.id)}
+                    className={`shrink-0 rounded-full px-3 py-1.5 text-xs font-semibold transition-colors ${
+                      active
+                        ? "bg-[#1a1c23] text-white"
+                        : "border border-[var(--pos-border)] bg-white text-[#4b5563] hover:bg-[#f9fafb]"
+                    }`}
+                  >
+                    {r.label}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+          {filterRoot !== "all" && subRowKids.length > 0 ? (
+            <div className="-mx-1 overflow-x-auto pb-1">
+              <div className="flex w-max min-w-full gap-2 px-1">
                 <button
-                  key={c}
                   type="button"
-                  onClick={() => setCategory(c)}
-                  className={`shrink-0 rounded-full px-3 py-1.5 text-xs font-semibold transition-colors ${
-                    active
-                      ? "bg-[#1a1c23] text-white"
+                  onClick={() => setFilterSub("all")}
+                  className={`shrink-0 rounded-full px-3 py-1.5 text-[11px] font-semibold transition-colors ${
+                    filterSub === "all"
+                      ? "bg-[var(--pos-primary)] text-white"
                       : "border border-[var(--pos-border)] bg-white text-[#4b5563] hover:bg-[#f9fafb]"
                   }`}
                 >
-                  {c}
+                  All in {subRowParent?.label ?? "section"}
                 </button>
-              );
-            })}
-          </div>
+                {subRowKids.map((ch) => {
+                  const active = filterSub === ch.id;
+                  return (
+                    <button
+                      key={ch.id}
+                      type="button"
+                      onClick={() => setFilterSub(ch.id)}
+                      className={`shrink-0 rounded-full px-3 py-1.5 text-[11px] font-semibold transition-colors ${
+                        active
+                          ? "bg-[var(--pos-primary)] text-white"
+                          : "border border-[var(--pos-border)] bg-white text-[#4b5563] hover:bg-[#f9fafb]"
+                      }`}
+                    >
+                      {ch.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          ) : null}
         </div>
 
         {filtered.length === 0 ? (
@@ -466,8 +575,8 @@ export function SellableDishesManager({
                       <p className="text-sm font-semibold text-[var(--pos-primary)]">
                         {formatCedi(p.price)}
                       </p>
-                      <p className="mt-0.5 text-[11px] text-[#9ca3af]">
-                        {p.category} · {p.id}
+                      <p className="mt-0.5 truncate text-[11px] text-[#9ca3af]">
+                        {categoryOptionLabel(categories, p.categoryId)} · {p.id}
                       </p>
                     </div>
                     <span
