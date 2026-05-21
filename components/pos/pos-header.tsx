@@ -8,15 +8,19 @@ export function PosHeader({
   onNewOrder,
   onOpenDraftList,
   onOpenQrMenuOrders,
+  onOpenOnlineOrders,
   qrOrdersPendingCount = 0,
+  onlineOrdersPendingCount = 0,
 }: {
   searchQuery: string;
   onSearchChange: (q: string) => void;
   onNewOrder?: () => void;
   onOpenDraftList?: () => void;
   onOpenQrMenuOrders?: () => void;
+  onOpenOnlineOrders?: () => void;
   /** Guest orders still in shared queue (not yet cleared at POS) */
   qrOrdersPendingCount?: number;
+  onlineOrdersPendingCount?: number;
 }) {
   return (
     <header className="shrink-0 border-b border-[var(--pos-border)] bg-white px-3 py-2 sm:px-4">
@@ -52,6 +56,21 @@ export function PosHeader({
           >
             <Plus className="h-3.5 w-3.5" strokeWidth={2.2} />
             New
+          </button>
+          <button
+            type="button"
+            onClick={() => onOpenOnlineOrders?.()}
+            className="relative rounded-lg border border-[var(--pos-border)] bg-white px-2.5 py-2 pr-3.5 text-[13px] font-medium text-[#374151] transition-colors hover:bg-[#f9fafb]"
+          >
+            Online orders
+            {onlineOrdersPendingCount > 0 ? (
+              <span
+                className="absolute -right-1 -top-1 flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-[var(--pos-primary)] px-1 text-[10px] font-bold text-white shadow-sm"
+                aria-label={`${onlineOrdersPendingCount} pending online orders`}
+              >
+                {onlineOrdersPendingCount > 9 ? "9+" : onlineOrdersPendingCount}
+              </span>
+            ) : null}
           </button>
           <button
             type="button"

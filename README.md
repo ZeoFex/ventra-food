@@ -53,12 +53,15 @@ Staff and operational screens live under the root `app/` tree:
 |------|-----------|-------------|
 | `/menu` | **Guest** | Mobile-first table menu: browse categories, search, cart, place order. Supports `?table=` (e.g. `/menu?table=6`) for table labeling. |
 | `/menu/qr` | **Staff** | Generates an on-page QR that deep-links to `/menu` (with optional table query). Copy link, preview guest view, same sidebar chrome as the rest of the POS. |
+| `/order` | **Info** | Explains that customers use each restaurant’s own link (not the POS). Lists demo venues. |
+| `/order/{slug}` | **Customer** | Per-restaurant storefront: menu, reviews, cart, checkout, tracking (e.g. `/order/restrobit`). |
 
 Guest layout sets dedicated **metadata** and **viewport** (theme color, safe mobile scaling) in `app/menu/(guest)/layout.tsx`.
 
 ## Key implementation notes
 
 - **Guest menu UI:** `components/guest-menu/guest-menu-app.tsx` — uses sellable menu + hierarchical categories from context.
+- **Online ordering:** `components/online-order/*` + `app/order/[slug]/*` — each restaurant has `/order/{slug}`; staff copy their link in **Settings** and handle orders under **Online orders** on the POS (filtered by active restaurant slug).
 - **Menu categories:** `lib/menu-categories.ts`, persisted in `ventra_menu_categories_v1` alongside dishes (`ventra_sellable_dishes_v1`).
 - **QR setup:** `components/menu-qr/menu-qr-setup.tsx`, page entry `app/menu/qr/page.tsx`.
 - **POS shell:** Sidebar navigation in `components/pos/app-sidebar.tsx` (includes **QR menu** → `/menu/qr`).

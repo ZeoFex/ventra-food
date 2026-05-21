@@ -1,9 +1,10 @@
 import type { Metadata } from "next";
 import { AppSidebar } from "@/components/pos/app-sidebar";
+import { StorefrontSettings } from "@/components/settings/storefront-settings";
 
 export const metadata: Metadata = {
   title: "Settings — Ventra Food",
-  description: "Location and POS preferences",
+  description: "Location, customer order URL, and POS preferences",
 };
 
 export default function SettingsPage() {
@@ -20,10 +21,7 @@ export default function SettingsPage() {
           </h1>
         </header>
         <main className="min-h-0 flex-1 overflow-y-auto p-4 sm:p-6">
-          <p className="max-w-xl text-sm text-[var(--pos-muted)]">
-            Configure outlet details, tax, printers, and roles here when you
-            connect your backend. This screen is a placeholder for now.
-          </p>
+          <StorefrontSettings />
         </main>
       </div>
     </div>

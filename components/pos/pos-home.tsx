@@ -2,9 +2,14 @@
 
 import { useSellableMenu } from "@/components/sellable-menu/sellable-menu-context";
 import {
+  OnlineOrdersModal,
+  useOnlineOrdersPendingCount,
+} from "@/components/pos/online-orders-modal";
+import {
   QrMenuOrdersModal,
   type QrMenuOrder,
 } from "@/components/pos/qr-menu-orders-modal";
+import type { OnlineOrder } from "@/lib/online-orders";
 import { AppSidebar } from "@/components/pos/app-sidebar";
 import { OrderCartPanel } from "@/components/pos/order-cart-panel";
 import { PosHeader } from "@/components/pos/pos-header";
@@ -51,6 +56,8 @@ export function PosHome() {
   const { products } = useSellableMenu();
   const [draftOpen, setDraftOpen] = useState(false);
   const [qrOrdersOpen, setQrOrdersOpen] = useState(false);
+  const [onlineOrdersOpen, setOnlineOrdersOpen] = useState(false);
+  const onlineOrdersPendingCount = useOnlineOrdersPendingCount();
   const [catalogSearch, setCatalogSearch] = useState("");
   const [orderNumber, setOrderNumber] = useState(15);
   const [cartLines, setCartLines] = useState<PosCartLine[]>([]);
@@ -364,6 +371,40 @@ export function PosHome() {
     [bumpQrQueueUi],
   );
 
+  const handleAcceptOnlineToPos = useCallback(
+    (order: OnlineOrder) => {
+      playPosBeep("scan");
+      setCartLines((prev) => {
+        const next = [...prev];
+        for (const line of order.lines) {
+          const product = findPosProductByName(products, line.name);
+          const id = product?.id ?? `web:${line.productId}`;
+          const unitPrice = product?.price ?? line.unitPrice;
+          const idx = next.findIndex((l) => l.id === id);
+          const badge = `Online · ${order.ref}`;
+          if (idx >= 0) {
+            next[idx] = {
+              ...next[idx],
+              qty: next[idx].qty + line.qty,
+              qrOrderBadge: badge,
+            };
+          } else {
+            next.push({
+              id,
+              name: product?.name ?? line.name,
+              unitPrice,
+              qty: line.qty,
+              qrOrderBadge: badge,
+            });
+          }
+        }
+        return next;
+      });
+      gooeyToast.success("Online order in cart", { description: order.ref });
+    },
+    [products],
+  );
+
   const onSetLineNotes = useCallback((lineId: string, notes: string) => {
     const trimmed = notes.trim();
     setCartLines((prev) =>
@@ -384,7 +425,9 @@ export function PosHome() {
           onNewOrder={startNewOrder}
           onOpenDraftList={() => setDraftOpen(true)}
           onOpenQrMenuOrders={() => setQrOrdersOpen(true)}
+          onOpenOnlineOrders={() => setOnlineOrdersOpen(true)}
           qrOrdersPendingCount={qrOrdersPendingCount}
+          onlineOrdersPendingCount={onlineOrdersPendingCount}
         />
         <div className="flex min-h-0 min-w-0 flex-1 items-stretch gap-2 py-2 pr-2">
           <ProductCatalog
@@ -413,6 +456,11 @@ export function PosHome() {
         onClose={() => setQrOrdersOpen(false)}
         onAcceptToPos={handleAcceptQrToPos}
         onDismissQrOrder={handleDismissQrOrder}
+      />
+      <OnlineOrdersModal
+        open={onlineOrdersOpen}
+        onClose={() => setOnlineOrdersOpen(false)}
+        onAcceptToPos={handleAcceptOnlineToPos}
       />
     </div>
   );

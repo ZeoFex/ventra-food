@@ -10,6 +10,7 @@ import {
 } from "@/lib/kitchen-ticket-relay-client";
 
 import type { QrMenuOrder } from "@/lib/qr-guest-orders";
+import type { OnlineOrder } from "@/lib/online-orders";
 
 export const KITCHEN_TICKETS_KEY = "ventra_kitchen_tickets_v1";
 
@@ -75,7 +76,7 @@ export type KitchenBoardTicket = {
   items: string[];
   station: string;
   status: KitchenTicketStatus;
-  source: "qr" | "pos";
+  source: "qr" | "pos" | "online";
   createdAt: string;
   /** In-memory dedupe; stripped before persist if needed */
   dedupeKey?: string;
@@ -231,4 +232,28 @@ export function formatKitchenTime(d: Date): string {
     minute: "2-digit",
     hour12: false,
   });
+}
+
+/** Kitchen ticket when an online order is confirmed at POS. */
+export function pushKitchenTicketForOnlineOrder(order: OnlineOrder): boolean {
+  const dedupeKey = `online-order-${order.ref}`;
+  const table =
+    order.fulfillment === "delivery"
+      ? `Delivery · ${order.customerName}`
+      : `Pickup · ${order.customerName}`;
+  const items = order.lines.map((l) => `${l.qty}× ${l.name}`);
+  return appendKitchenTicket(
+    {
+      id: `KOT-WEB-${order.ref}`,
+      table,
+      time: formatKitchenTime(new Date()),
+      items,
+      station: "Online order → kitchen",
+      status: "new",
+      source: "online",
+      createdAt: new Date().toISOString(),
+      dedupeKey,
+    },
+    { dedupeKey },
+  );
 }
